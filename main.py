@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, BackgroundTasks
 import requests
 
 load_dotenv()
@@ -295,13 +295,46 @@ def main(project_id, mr_iid, source_branch, target_branch):
     return final_comment
 
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("gitlab-webhook")
+
 app = FastAPI()
 
 
+def background_logic(project_id, mr_iid, source_branch, target_branch):
+    try:
+        comment = main(project_id, mr_iid, source_branch, target_branch)
+        logger.info(f"Funkcja main zakończona sukcesem dla MR !{mr_iid}")
+
+        url = f"{GITLAB_API_URL}/api/v4/projects/{project_id}/merge_requests/{mr_iid}/notes"
+        headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
+
+        response = requests.post(url, headers=headers, json={"body": comment}, timeout=10)
+
+        if response.status_code == 201:
+            logger.info(f"Komentarz został pomyślnie dodany do MR !{mr_iid}")
+        else:
+            logger.error(f"GitLab API zwrócił błąd {response.status_code}: {response.text}")
+
+    except Exception as e:
+        logger.exception(f"Wystąpił nieoczekiwany błąd w procesie tła: {e}")
+
+
 @app.post("/webhook")
-def gitlab_webhook(payload: dict = Body(...)):
-    if payload.get("object_kind") != "merge_request":
-        return {"status": "skipped"}
+def gitlab_webhook(background_tasks: BackgroundTasks, payload: dict = Body(...)):
+    event_type = payload.get("object_kind")
+
+    logger.info(f"Odebrano webhook: {event_type}")
+
+    if event_type != "merge_request":
+        logger.warning(f"Zignorowano zdarzenie typu: {event_type}")
+        return {"status": "skipped", "reason": "not a merge_request"}
 
     attrs = payload.get("object_attributes", {})
     project_id = payload.get("project", {}).get("id")
@@ -309,24 +342,23 @@ def gitlab_webhook(payload: dict = Body(...)):
     source_branch = attrs.get("source_branch")
     target_branch = attrs.get("target_branch")
 
-    comment = main(project_id, mr_iid, source_branch, target_branch)
+    logger.info(f"Planowanie zadania w tle dla MR !{mr_iid} (Projekt: {project_id})")
 
-    url = f"{GITLAB_API_URL}/api/v4/projects/{project_id}/merge_requests/{mr_iid}/notes"
-    headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
+    background_tasks.add_task(
+        background_logic,
+        project_id,
+        mr_iid,
+        source_branch,
+        target_branch
+    )
 
-    response = requests.post(url, headers=headers, json={"body": comment})
-
-    return {
-        "status": "ok",
-        "gitlab_status": response.status_code
-    }
+    return {"status": "accepted"}
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    # Uruchomienie serwera
+    logger.info("Uruchamianie serwera na porcie 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
-
 
 
