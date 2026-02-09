@@ -255,6 +255,8 @@ def main(project_id, mr_iid, source_branch, target_branch):
         for depends_on in file_dependency.depends_on:
             dependency_map.append({"obj": clean_obj_name(depends_on), "file": file_dependency.file_path})
 
+            break
+
     full_logic_review = []
     full_holistic_review = []
 
@@ -315,6 +317,7 @@ def background_logic(project_id, mr_iid, source_branch, target_branch):
         url = f"{GITLAB_API_URL}/api/v4/projects/{project_id}/merge_requests/{mr_iid}/notes"
         headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
 
+        logger.info(f"Wysyłam POST na adres: {url}")
         response = requests.post(url, headers=headers, json={"body": comment}, timeout=10)
 
         if response.status_code == 201:
