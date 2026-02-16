@@ -28,30 +28,25 @@ def dict_list_to_md_table(data_list: list) -> str:
 
 def format_sql_review_comment(full_holistic_review):
     if not full_holistic_review:
-        return "### 🤖 AI SQL Review\nNie wykryto zmian w plikach SQL."
+        return "## 🤖 SQL Review: No issues found."
 
-    # Nagłówek tematyczny
-    comment_parts = [
-        "## SQL Performance & Logic Analysis",
-        f"**Przeanalizowane skrypty:** `{len(full_holistic_review)}`",
-        "---"
-    ]
+    parts = ["## SQL Agent: Analysis Report", "---"]
 
     for fhr in full_holistic_review:
-        path = fhr.get("target_file_path", "unknown.sql")
-        review_content = fhr.get("comment", "")
+        path = fhr["target_file_path"]
+        remarks = fhr["remarks"]
 
-        section = [
-            f"<details>",
-            f"<summary><b>{path}</b> (rozwiń analizę)</summary>",
-            "\n",
-            "#### Uwagi Agenta:",
-            f"> {review_content}",
-            "\n",
-            "---",
-            "</details>"
-        ]
+        if not remarks:
+            continue
 
-        comment_parts.append("\n".join(section))
+        bullet_points = "\n".join([f"> - {r}" for r in remarks])
 
-    return "\n".join(comment_parts)
+        parts.append(
+            f"<details>\n"
+            f"<summary><b>{path}</b> (Found {len(remarks)} items)</summary>\n\n"
+            f"#### Technical Remarks:\n"
+            f"{bullet_points}\n"
+            f"</details>"
+        )
+
+    return "\n".join(parts)

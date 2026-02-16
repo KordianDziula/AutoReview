@@ -23,6 +23,9 @@ class CodeReviewResult(BaseModel):
     description: str = Field(description="Techniczny opis błędu lub ryzyka.")
 
 
+class SqlReviewResult(BaseModel):
+    remarks: List[str] = Field(description="Lista konkretnych, zwięzłych uwag dotyczących kodu SQL")
+
 def agent_dependency_mapper(file_data: dict) -> DependencyMap:
     prompt = f"""
         Jesteś ekspertem analizy przepływu danych (Data Lineage) w SQL. Twoim zadaniem jest analiza pliku: '{file_data['path']}'.
@@ -94,27 +97,28 @@ def agent_logic_verifier(target_file: dict, related_files: list) -> list:
 
 def agent_holistic_review(target_file: dict) -> dict:
     prompt = f"""
-    Jesteś Lead Data Engineerem i Architektem Danych.
-    Twoim zadaniem jest wykonanie CODE REVIEW.
+    Jesteś Lead Data Engineerem. Wykonaj CODE REVIEW SQL dla pliku: {target_file['path']}.
+    Baza: MS SQL Server.
 
-    Żródła informacji:
-
-    KOD ŹRÓDŁOWY DO OCENY (Plik główny):
-    Plik: '{target_file['path']}'
-    Kod:
+    KOD SQL:
     ```sql
     {target_file['content']}
     ```
 
-    ---
-    INSTRUKCJA TWORZENIA RAPORTU:
+    TWOJE ZADANIE:
+    Wygeneruj listę konkretnych uwag technicznych. 
+    Skup się na:
+    1. Wydajności (JOINs, Indexes).
+    2. Logice biznesowej i błędach składniowych.
+    3. Standardach (nazewnictwo, czytelność).
 
-    AUDYT JAKOŚCI KODU (Holistyczne Review)
-    - Wskaż jeżeli występują błędu w zakresie:
-      - Poprawności składniowej i logicznej
-      - Wydajności
-
-    FORMAT WYJŚCIOWY: Markdown, jedynie punkty. Bardzo zwięźle. 
+    Każda uwaga musi być krótka i konkretna.
     """
 
-    return {"target_file_path": target_file["path"], "comment": LLM.invoke(prompt).content}
+    result = LLM.with_structured_output(SqlReviewResult)\
+        .invoke(prompt)
+
+    return {
+        "target_file_path": target_file["path"],
+        "remarks": result.remarks
+    }
